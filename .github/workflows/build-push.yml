@@ -12,6 +12,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  # GHCR image names must be lowercase.
   IMAGE_NAME: phuc776/w10-api
 
 jobs:
