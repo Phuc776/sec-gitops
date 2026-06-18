@@ -1,0 +1,13 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sDisallowRunAsRoot
+metadata:
+  name: disallow-runas-root
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  enforcementAction: deny
+  match:
+    namespaces: ["demo"]
+    kinds:
+    - apiGroups: [""]
+      kinds: ["Pod"]
