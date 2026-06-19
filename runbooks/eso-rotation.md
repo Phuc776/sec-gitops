@@ -1,43 +1,203 @@
-# ESO Rotation Runbook
+# Lab 2.1 Runbook: External Secrets Operator
 
 ## Goal
 
-Prove a secret can rotate in less than 60 seconds without restarting the pod.
+Prove that application secrets are not stored in Git. The source of truth is AWS Secrets Manager, and External Secrets Operator syncs the value into Kubernetes.
 
-## AWS Secrets Manager Lab Flow
-
-1. Sync `argocd/apps/eso.yaml`.
-2. Create the AWS secret and the in-cluster `aws-credentials` Secret using `runbooks/aws-secrets-manager-setup.md`.
-3. Sync `argocd/apps/eso-config.yaml`.
-4. Confirm the generated Secret:
-
-```powershell
-kubectl get secret api-db-secret -n demo -o jsonpath="{.data.DB_PASSWORD}"
+```text
+AWS Secrets Manager
+  w10/demo/db-password
+  field: DB_PASSWORD
+        |
+        v
+External Secrets Operator
+        |
+        v
+Kubernetes Secret demo/api-db-secret
+        |
+        v
+Pod demo/secret-reader reads the mounted Secret
 ```
 
-Decode it:
+## Files
 
-```powershell
-[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String((kubectl get secret api-db-secret -n demo -o jsonpath="{.data.DB_PASSWORD}")))
+```text
+argocd/apps/eso.yaml
+argocd/apps/eso-config.yaml
+eso/secret-store.yaml
+eso/external-secret.yaml
+eso/secret-reader-pod.yaml
+runbooks/eso-rotation.md
 ```
 
-5. Confirm the reader pod age:
+Do not commit AWS credentials. The local credential file is ignored:
 
-```powershell
-kubectl get pod secret-reader -n demo
+```text
+eso/aws-credentials.secret.yaml
 ```
 
-6. Rotate the AWS source:
+## Constants
 
 ```powershell
+$Region = "us-east-1"
+$SecretId = "w10/demo/db-password"
+$Namespace = "demo"
+$K8sSecret = "api-db-secret"
+```
+
+These must match:
+
+- `eso/secret-store.yaml`: AWS region
+- `eso/external-secret.yaml`: remote secret key and `DB_PASSWORD` property
+
+## Prepare AWS Secret
+
+Check AWS identity:
+
+```powershell
+aws sts get-caller-identity
+```
+
+Create or update the AWS secret without printing the value:
+
+```powershell
+'{"DB_PASSWORD":"demo-password-v1"}' | Set-Content -NoNewline .secret-value.json
+
+aws secretsmanager describe-secret `
+  --region $Region `
+  --secret-id $SecretId
+
+if ($LASTEXITCODE -eq 0) {
+  aws secretsmanager put-secret-value `
+    --region $Region `
+    --secret-id $SecretId `
+    --secret-string file://.secret-value.json
+} else {
+  aws secretsmanager create-secret `
+    --region $Region `
+    --name $SecretId `
+    --secret-string file://.secret-value.json
+}
+
+Remove-Item .secret-value.json
+```
+
+Verify the JSON shape:
+
+```powershell
+$encoded = aws secretsmanager get-secret-value `
+  --region $Region `
+  --secret-id $SecretId `
+  --query SecretString `
+  --output json
+
+$secretString = $encoded | ConvertFrom-Json
+$secretObject = $secretString | ConvertFrom-Json
+
+if ($secretObject.PSObject.Properties.Name -contains "DB_PASSWORD") {
+  "DB_PASSWORD field: present"
+} else {
+  "DB_PASSWORD field: missing"
+}
+```
+
+## Prepare Kubernetes Credential
+
+Create the Kubernetes credential Secret before or immediately after `eso-config` syncs:
+
+```powershell
+$accessKey = aws configure get aws_access_key_id
+$secretKey = aws configure get aws_secret_access_key
+
+kubectl create secret generic aws-credentials -n $Namespace `
+  --from-literal=access-key-id=$accessKey `
+  --from-literal=secret-access-key=$secretKey `
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Expected:
+
+```powershell
+kubectl get secret aws-credentials -n $Namespace
+```
+
+## Check ESO Sync
+
+```powershell
+kubectl get application external-secrets eso-config -n argocd
+kubectl get pods -n external-secrets
+kubectl get secretstore,externalsecret -n $Namespace
+kubectl get secret $K8sSecret -n $Namespace
+kubectl get pod secret-reader -n $Namespace
+```
+
+Expected:
+
+```text
+external-secrets                  Synced/Healthy
+SecretStore/aws-store             Valid, Ready=True
+ExternalSecret/api-db-password    SecretSynced, Ready=True
+Secret demo/api-db-secret         exists
+Pod demo/secret-reader            Running
+```
+
+Optional decode check:
+
+```powershell
+[System.Text.Encoding]::UTF8.GetString(
+  [System.Convert]::FromBase64String(
+    (kubectl get secret $K8sSecret -n $Namespace -o jsonpath="{.data.DB_PASSWORD}")
+  )
+)
+```
+
+## Rotation Test
+
+Record pod age:
+
+```powershell
+kubectl get pod secret-reader -n $Namespace
+```
+
+Rotate the AWS secret:
+
+```powershell
+'{"DB_PASSWORD":"demo-password-v2"}' | Set-Content -NoNewline .secret-value.json
+
 aws secretsmanager put-secret-value `
-  --region us-east-1 `
-  --secret-id w10/demo/db-password `
-  --secret-string '{\"DB_PASSWORD\":\"demo-password-v2\"}'
+  --region $Region `
+  --secret-id $SecretId `
+  --secret-string file://.secret-value.json
+
+Remove-Item .secret-value.json
 ```
 
-7. Verify the Kubernetes Secret changes within 30 seconds and the pod age does not reset.
+Wait 30-60 seconds. `eso/external-secret.yaml` uses:
 
-## Optional Fake Provider Fallback
+```yaml
+refreshInterval: 30s
+```
 
-If AWS is unavailable, use `eso/fake-secret-store.example` as a fallback. This proves ESO reconciliation, `ExternalSecret` mapping, Kubernetes Secret update, and pod no-restart behavior, but it does not prove AWS IAM or AWS Secrets Manager integration.
+Check that the workload sees the new value:
+
+```powershell
+kubectl logs secret-reader -n $Namespace --tail=20
+```
+
+Expected: logs show `demo-password-v2`.
+
+Check the pod age again:
+
+```powershell
+kubectl get pod secret-reader -n $Namespace
+```
+
+## Pass Criteria
+
+```text
+AWS Secrets Manager value changes.
+ESO syncs the new value into demo/api-db-secret.
+secret-reader sees the new value.
+secret-reader pod is not restarted for the rotation.
+No AWS credential file is committed to Git.
+```
