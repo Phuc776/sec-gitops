@@ -1,5 +1,6 @@
 # Build and push Docker image to GitHub Container Registry
 name: Build and Push Image
+# Lab 2.2: scan image, sign pushed digest, and update rollout to that digest.
 
 on:
   push:
