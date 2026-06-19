@@ -15,6 +15,7 @@ argocd/apps/policy-controller.yaml
 argocd/apps/policies.yaml
 policies/cluster-image-policy.yaml
 signing/cosign.pub
+test/supply-chain-namespace.yaml
 test/supply-chain-signed-pod.yaml
 test/supply-chain-unsigned-pod.yaml
 ```
@@ -72,12 +73,12 @@ If the image is not signed yet, sign it locally once:
 cosign sign --yes --key cosign.key ghcr.io/phuc776/w10-api:0.0.1
 ```
 
-## Enable Admission For Demo Namespace
+## Test Namespace
 
-Only label the namespace after the current app image has a valid signature:
+Use a dedicated namespace so the lab does not disrupt the `demo` apps:
 
 ```powershell
-kubectl label namespace demo policy.sigstore.dev/include=true --overwrite
+kubectl apply -f test/supply-chain-namespace.yaml
 ```
 
 ## Test
@@ -99,7 +100,7 @@ Signed image must be accepted:
 
 ```powershell
 kubectl apply -f test/supply-chain-signed-pod.yaml
-kubectl get pod signed-w10-api -n demo
+kubectl get pod signed-w10-api -n supply-chain-test
 ```
 
 Clean up:
@@ -107,10 +108,5 @@ Clean up:
 ```powershell
 kubectl delete -f test/supply-chain-signed-pod.yaml --ignore-not-found
 kubectl delete -f test/supply-chain-unsigned-pod.yaml --ignore-not-found
-```
-
-To disable admission temporarily:
-
-```powershell
-kubectl label namespace demo policy.sigstore.dev/include-
+kubectl delete -f test/supply-chain-namespace.yaml --ignore-not-found
 ```
