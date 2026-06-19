@@ -3,10 +3,12 @@ kind: ClusterImagePolicy
 metadata:
   name: require-phuc776-signature
 spec:
+  mode: enforce
   images:
   - glob: ghcr.io/phuc776/w10-api**
   authorities:
-  - key:
+  - name: authority-0
+    key:
       hashAlgorithm: sha256
       data: |
         -----BEGIN PUBLIC KEY-----
