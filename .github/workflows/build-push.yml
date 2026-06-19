@@ -103,9 +103,33 @@ jobs:
           echo "IMAGE_DIGEST=$IMAGE_DIGEST" >> "$GITHUB_ENV"
 
       - name: Update rollout.yaml with new version
+        env:
+          VERSION: ${{ steps.semver.outputs.version }}
         run: |
-          sed -i -E "s|image: ghcr.io/.*/w10-api(:[^[:space:]]+|@sha256:[a-f0-9]+)?|image: ${IMAGE_DIGEST}|g" app-api/rollout.yaml
-          sed -i "s|value: \"v.*\"|value: \"v${{ steps.semver.outputs.version }}\"|g" app-api/rollout.yaml
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          image = os.environ["IMAGE_DIGEST"]
+          version = os.environ["VERSION"]
+          path = Path("app-api/rollout.yaml")
+          text = path.read_text()
+
+          text = re.sub(
+              r"(\s*image:\s*)ghcr\.io/[^\s]+/w10-api(?::[^\s]+|@sha256:[a-f0-9]+)?",
+              lambda match: f"{match.group(1)}{image}",
+              text,
+              count=1,
+          )
+          text = re.sub(
+              r'(\s*value:\s*)"v[^"]*"',
+              lambda match: f'{match.group(1)}"v{version}"',
+              text,
+              count=1,
+          )
+          path.write_text(text)
+          PY
 
       - name: Commit and push version update
         run: |
