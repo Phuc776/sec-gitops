@@ -10,3 +10,10 @@ k8s-monitoring/alertmanager-config.yaml
 
 # OS
 .DS_Store
+
+# Test folder
+test/
+
+# Cosign private key - never commit
+cosign.key
+signing/cosign.key
