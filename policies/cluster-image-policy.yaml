@@ -12,6 +12,6 @@ spec:
       hashAlgorithm: sha256
       data: |
         -----BEGIN PUBLIC KEY-----
-        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbOHWBCCFgHHsBq4kj7B4Jfy3h503
-        9xUGdWSIvqHTTwILDHcI2jmXF8gUVUQMf8t8U9x6M/odEn+sQPcio1Csfw==
+        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtLoOTsA41m4jp+rur5suDJe5+ysC
+        rVsjN/55EOzkrThA0CzggtqdHpP0/IpANdQ6fgMHnEbmzwZfs2U0VL5Fhg==
         -----END PUBLIC KEY-----
