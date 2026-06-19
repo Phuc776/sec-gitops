@@ -93,6 +93,10 @@ jobs:
             echo "COSIGN_PRIVATE_KEY is not configured"
             exit 1
           fi
+          if [ -z "$COSIGN_PASSWORD" ]; then
+            echo "COSIGN_PASSWORD is not configured"
+            exit 1
+          fi
           IMAGE_DIGEST="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
           cosign sign --yes --key env://COSIGN_PRIVATE_KEY "$IMAGE_DIGEST"
           echo "IMAGE_DIGEST=$IMAGE_DIGEST" >> "$GITHUB_ENV"
