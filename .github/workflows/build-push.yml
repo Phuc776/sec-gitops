@@ -73,6 +73,7 @@ jobs:
           exit-code: '1'
 
       - name: Build and push Docker image
+        id: push
         uses: docker/build-push-action@v6
         with:
           context: ./src/api
@@ -83,7 +84,7 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.8.2
 
-      - name: Sign pushed image tags
+      - name: Sign pushed image digest
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -92,14 +93,13 @@ jobs:
             echo "COSIGN_PRIVATE_KEY is not configured"
             exit 1
           fi
-          echo "${{ steps.meta.outputs.tags }}" | while read -r tag; do
-            [ -z "$tag" ] && continue
-            cosign sign --yes --key env://COSIGN_PRIVATE_KEY "$tag"
-          done
+          IMAGE_DIGEST="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+          cosign sign --yes --key env://COSIGN_PRIVATE_KEY "$IMAGE_DIGEST"
+          echo "IMAGE_DIGEST=$IMAGE_DIGEST" >> "$GITHUB_ENV"
 
       - name: Update rollout.yaml with new version
         run: |
-          sed -i "s|image: ghcr.io/.*/w10-api:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.semver.outputs.version }}|g" app-api/rollout.yaml
+          sed -i -E "s|image: ghcr.io/.*/w10-api(:[^[:space:]]+|@sha256:[a-f0-9]+)?|image: ${IMAGE_DIGEST}|g" app-api/rollout.yaml
           sed -i "s|value: \"v.*\"|value: \"v${{ steps.semver.outputs.version }}\"|g" app-api/rollout.yaml
 
       - name: Commit and push version update

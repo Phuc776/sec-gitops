@@ -2,105 +2,98 @@
 
 ## Goal
 
-Lab 2.2 proves two controls:
+Lab 2.2 proves three controls:
 
-- CI blocks images with HIGH or CRITICAL CVEs before they are pushed.
-- Admission blocks unsigned images before they can run in Kubernetes.
+- Trivy blocks HIGH or CRITICAL CVEs in CI.
+- Cosign signs the image after CI builds and pushes it.
+- Admission rejects unsigned images in Kubernetes.
 
-## Files
+## Risk Map
 
 ```text
-.github/workflows/build-push.yml
-argocd/apps/policy-controller.yaml
-argocd/apps/policies.yaml
-policies/cluster-image-policy.yaml
-signing/cosign.pub
-test/supply-chain-namespace.yaml
-test/supply-chain-signed-pod.yaml
-test/supply-chain-unsigned-pod.yaml
+Trivy in CI       -> F-05
+Cosign signing    -> F-06
+Admission verify  -> F-06
 ```
 
-`test/` is local-only and ignored by Git.
+## Key Rules
 
-## GitHub Secrets
-
-Create these GitHub Actions secrets before relying on CI signing:
+`cosign.key` is private. It is only used by GitHub Actions through repository secrets:
 
 ```text
 COSIGN_PRIVATE_KEY
 COSIGN_PASSWORD
 ```
 
-Use the full local `cosign.key` content for `COSIGN_PRIVATE_KEY`. Do not commit the private key.
+`signing/cosign.pub` is public. It is committed and embedded in:
 
-## Install Admission Controller
-
-Push/sync these ArgoCD apps:
-
-```powershell
-kubectl apply -f argocd/apps/policy-controller.yaml
-kubectl apply -f argocd/apps/policies.yaml
+```text
+policies/cluster-image-policy.yaml
 ```
 
-Check:
+Do not sign the lab image locally for the main proof. The image must be signed by CI after Trivy passes.
+
+## CI Flow
+
+```text
+push src/api or workflow change
+-> build image for scan
+-> Trivy scan HIGH/CRITICAL with exit-code 1
+-> build and push image to GHCR
+-> sign pushed image digest with COSIGN_PRIVATE_KEY
+-> update app-api/rollout.yaml to the signed digest
+```
+
+The rollout must use the signed digest, not just `latest`.
+
+## Cluster Setup
+
+ArgoCD apps:
+
+```text
+argocd/apps/policy-controller.yaml
+argocd/apps/policies.yaml
+```
+
+Checks:
 
 ```powershell
 kubectl get application policy-controller image-policies -n argocd
 kubectl get pods -n cosign-system
-kubectl get crd clusterimagepolicies.policy.sigstore.dev
 kubectl get clusterimagepolicy
 ```
 
 Expected:
 
 ```text
-policy-controller   Synced   Healthy
-image-policies      Synced   Healthy
-ClusterImagePolicy  require-phuc776-signature
-```
-
-## Verify Image Signature
-
-Verify the image used by the lab:
-
-```powershell
-cosign verify --key signing/cosign.pub ghcr.io/phuc776/w10-api:0.0.1
-```
-
-If the image is not signed yet, sign it locally once:
-
-```powershell
-cosign sign --yes --key cosign.key ghcr.io/phuc776/w10-api:0.0.1
-```
-
-## Test Namespace
-
-Use a dedicated namespace so the lab does not disrupt the `demo` apps:
-
-```powershell
-kubectl apply -f test/supply-chain-namespace.yaml
+policy-controller webhook Running
+image-policies Healthy
+ClusterImagePolicy require-phuc776-signature exists
 ```
 
 ## Test
 
-Unsigned image must be rejected:
+Use the local ignored `test/` folder. It creates a dedicated namespace with admission enabled, so `demo` is not disrupted before the CI-signed rollout is ready.
 
 ```powershell
-kubectl apply -f test/supply-chain-unsigned-pod.yaml
+.\test\supply-chain-test-ci.ps1
 ```
 
-Expected result:
+Expected:
 
 ```text
-admission webhook ... denied the request
-signature check failed
+cosign verify succeeds for the rollout image digest
+unsigned image is rejected by admission
+signed rollout image is accepted
 ```
 
-Signed image must be accepted:
+Manual commands:
 
 ```powershell
+kubectl apply -f test/supply-chain-namespace.yaml
+cosign verify --key signing/cosign.pub <image-from-app-api-rollout.yaml>
+kubectl apply -f test/supply-chain-unsigned-pod.yaml
 kubectl apply -f test/supply-chain-signed-pod.yaml
-kubectl get pod signed-w10-api -n supply-chain-test
 ```
 
 Clean up:
@@ -110,3 +103,15 @@ kubectl delete -f test/supply-chain-signed-pod.yaml --ignore-not-found
 kubectl delete -f test/supply-chain-unsigned-pod.yaml --ignore-not-found
 kubectl delete -f test/supply-chain-namespace.yaml --ignore-not-found
 ```
+
+## Evidence
+
+The lab is complete when:
+
+```text
+Push image with HIGH CVE -> CI fails
+Deploy unsigned image    -> admission rejects
+Deploy CI-signed image   -> admission allows
+```
+
+If a vendor CVE has no fix yet, document a time-bounded exception in `runbooks/cve-exception-adr.md`.
