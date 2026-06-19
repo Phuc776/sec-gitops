@@ -188,6 +188,12 @@ ArgoCD applications deploy in order:
 - Wave 1: `app-analysis`, `app-alert` (configuration)
 - Wave 2: `app-api` (application)
 
+## Multi-Tenant Guardrails
+
+The `payments` tenant inherits the existing guardrails because Gatekeeper constraints and the Sigstore `ClusterImagePolicy` are cluster-level admission controls that match the `payments` namespace; no duplicate tenant-specific policy is needed. The tenant only supplies namespace, RBAC, quota, network policy, and its own workload.
+
+A namespaced `Role` plus `RoleBinding` grants `payments-dev` permissions only inside `payments`. A `ClusterRoleBinding` would bind permissions cluster-wide and could let the tenant reach resources in `demo`, so this lab intentionally avoids it.
+
 ## Cleanup
 
 ```bash

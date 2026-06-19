@@ -7,7 +7,7 @@ metadata:
 spec:
   enforcementAction: deny
   match:
-    namespaces: ["demo"]
+    namespaces: ["demo", "payments"]
     kinds:
     - apiGroups: [""]
       kinds: ["Pod"]

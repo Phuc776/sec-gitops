@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-api
+  namespace: payments
+  labels:
+    app: payments-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payments-api
+  template:
+    metadata:
+      labels:
+        app: payments-api
+    spec:
+      securityContext:
+        runAsUser: 1000
+      containers:
+      - name: api
+        image: ghcr.io/phuc776/w10-api@sha256:0206a89aba3157db31dc8ae752d62d0a4691b8a52e104d402b2a0d27e4b380d9
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments-api
+  namespace: payments
+  labels:
+    app: payments-api
+spec:
+  selector:
+    app: payments-api
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
